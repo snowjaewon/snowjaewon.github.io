@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>재원 랩 · 돌아가는 것들의 기록</title>
+  <meta name="description" content="시스템을 만들고 숫자로 검증하는 설재원의 운영 대장. 투자분석봇, 공무원 맛집 지도, 토스 미니앱 두 개까지 실측 지표로 기록합니다.">
+  <meta name="author" content="설재원">
+  <meta name="theme-color" content="#f7f7f4">
+  <link rel="canonical" href="https://snowjaewon.github.io/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://snowjaewon.github.io/">
+  <meta property="og:title" content="재원 랩 · 돌아가는 것들의 기록">
+  <meta property="og:description" content="시스템을 만들고 숫자로 검증하는 설재원의 운영 대장. 투자분석봇, 공무원 맛집 지도, 토스 미니앱 두 개까지 실측 지표로 기록합니다.">
+  <meta property="og:image" content="https://snowjaewon.github.io/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://snowjaewon.github.io/assets/og.png">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="wrap nav">
+      <a class="brand" href="#top" aria-label="재원 랩 처음으로">
+        <svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="36" height="36" rx="7" fill="var(--seal)"/><text x="20" y="22" text-anchor="middle" dominant-baseline="central" font-size="20" font-weight="800" fill="var(--paper)" font-family="var(--font-body)">재</text></svg>
+        <span>재원 랩</span>
+      </a>
+      <div class="nav-links">
+        <a href="#ledger">대장</a>
+        <a href="#loop">검증</a>
+        <a href="#record">활동</a>
+        <a href="#timeline">연표</a>
+        <a href="#contact">연락</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section id="top" class="hero grid-soft">
+      <div class="wrap hero-copy">
+        <h1 class="hero-title">
+          <span class="hero-line" data-drift="-1">돌아가는 것들의</span>
+          <span class="hero-line" data-drift="1">기록</span>
+        </h1>
+        <p class="hero-lead">시스템을 만들고, 숫자로 검증합니다. 전남대학교 에너지자원공학과 설재원의 운영 대장입니다.</p>
+        <a href="#ledger" class="cta-stamp">대장 펼치기</a>
+      </div>
+      <div class="wrap hero-figure">
+        <div class="hero-photo" data-drift-y="1">
+          <img src="assets/hero-desk.webp" alt="펼쳐진 종이 대장과 지표 모니터, 인주 도장이 놓인 새벽 책상" width="1032" height="312">
+        </div>
+        <p class="mono caption">LEDGER OPEN. 매일 아침 8시, 첫 리포트가 도착하는 자리</p>
+      </div>
+    </section>
+
+    <section class="metrics" aria-label="핵심 지표">
+      <div class="wrap metrics-grid">
+        <div class="metric"><span class="metric-num mono">768</span><span class="metric-label">회귀 테스트, 매 배포마다</span></div>
+        <div class="metric"><span class="metric-num mono">539</span><span class="metric-label">추적한 투자 포지션</span></div>
+        <div class="metric"><span class="metric-num mono">39,439</span><span class="metric-label">지도에 올린 식당</span></div>
+        <div class="metric"><span class="metric-num mono">2</span><span class="metric-label">토스에 출시한 미니앱</span></div>
+      </div>
+    </section>
+
+    <section id="ledger" class="ledger grid-soft">
+      <div class="wrap">
+        <p class="eyebrow">Ledger</p>
+        <h2 class="section-title">프로젝트 대장</h2>
+        <p class="section-lead">한 장씩 넘기며 읽는 기록입니다. 모든 항목에는 상태 도장과 실측 지표가 찍혀 있습니다.</p>
+
+        <div class="stack">
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <div class="mono card-no">No.01 · 2026.05 ~ 운영 중</div>
+                <h3 class="card-title">투자분석봇</h3>
+                <div class="mono card-stack">Google Apps Script · Gemini · Google Sheets</div>
+              </div>
+              <svg class="seal" viewBox="0 0 100 100" role="img" aria-label="상태: 가동중"><circle cx="50" cy="50" r="46"/><circle cx="50" cy="50" r="38" class="inner"/><text x="50" y="50">가동중</text></svg>
+            </div>
+            <div class="card-body has-plate narrow-plate">
+              <div>
+                <p class="card-desc">매일 아침 8시, 글로벌 시장을 분석한 리포트를 만들어 구독자에게 보내는 봇. 리스크 심사역, 컴플라이언스, 복기 담당, 포트폴리오 매니저까지 7개 AI 역할이 서로의 판단을 검수하고, 성과대장이 그 판단들의 실제 성적을 검증합니다.</p>
+                <ul class="mono facts">
+                  <li>AI 역할 7</li>
+                  <li>회귀 테스트 768건</li>
+                  <li>추적 포지션 539</li>
+                  <li>배포 v7.34</li>
+                </ul>
+              </div>
+              <figure class="plate">
+                <img src="assets/plate-bot.webp" alt="투자분석봇이 실제 발송한 일간 리포트 이메일 화면" loading="lazy">
+                <figcaption class="mono">실제 발송된 일간 리포트. 방어 모드 배너와 공포·탐욕 지수가 보인다</figcaption>
+              </figure>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <div class="mono card-no">No.02 · 2026.07 ~ 운영 중</div>
+                <h3 class="card-title">공무원 맛집 지도</h3>
+                <div class="mono card-stack">Python · 정보공개 데이터 · 네이버 지도 · Cloudflare Pages</div>
+              </div>
+              <svg class="seal" viewBox="0 0 100 100" role="img" aria-label="상태: 가동중"><circle cx="50" cy="50" r="46"/><circle cx="50" cy="50" r="38" class="inner"/><text x="50" y="50">가동중</text></svg>
+            </div>
+            <div class="card-body has-plate">
+              <div>
+                <p class="card-desc">지자체가 정보공개법에 따라 공개한 업무추진비 집행내역을 모아, 공무원이 자주 찾는 식당을 지도에 올린 사이트. 도시마다 제각각인 공개 형식을 수집기 여러 벌로 모으고, 인허가 데이터로 폐업 여부까지 대조합니다. 친구와 함께 만들고 있습니다.</p>
+                <ul class="mono facts">
+                  <li>7개 특별·광역시</li>
+                  <li>식당 39,439곳</li>
+                  <li>서울 23,511곳</li>
+                  <li>첫 화면 5.64MB → 1.55MB</li>
+                </ul>
+                <a class="mono card-link" href="https://governdeliciousmap.pages.dev/" target="_blank" rel="noopener">지도 열기 ↗</a>
+              </div>
+              <figure class="plate">
+                <img src="assets/plate-map.webp" alt="광주 공무원 맛집 지도 화면. 지도 위 식당 마커와 방문 횟수 순 목록" loading="lazy">
+                <figcaption class="mono">광주 화면. 원 안의 숫자는 2026년 상반기 방문 횟수</figcaption>
+              </figure>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <div class="mono card-no">No.03 · 2026.07 프로토타입 완성</div>
+                <h3 class="card-title">AI 일상안전지도</h3>
+                <div class="mono card-stack">Python · OSM 보행 네트워크 · 공공데이터</div>
+              </div>
+              <svg class="seal" viewBox="0 0 100 100" role="img" aria-label="상태: 실증"><circle cx="50" cy="50" r="46"/><circle cx="50" cy="50" r="38" class="inner"/><text x="50" y="50">실증</text></svg>
+            </div>
+            <div class="card-body has-plate">
+              <div>
+                <p class="card-desc">CCTV, 가로등, 비상벨, 치안시설 1,424개를 보행 네트워크에 결합해 최단 경로와 안전 경로를 비교하는 프로토타입. 광주 양림동 실측 기준, 야간에 2% 더 걸으면 경로의 안전 점수가 48% 올라갑니다.</p>
+                <ul class="mono facts">
+                  <li>안전시설 1,424</li>
+                  <li>도보 그래프 11,532엣지</li>
+                  <li>야간 점수 +48%</li>
+                  <li>추가 거리 +1.9%</li>
+                </ul>
+              </div>
+              <figure class="plate">
+                <img src="assets/plate-safemap.webp" alt="야간 지도 위 최단 경로와 안전 경로 비교 화면" loading="lazy">
+                <figcaption class="mono">회색이 최단 경로, 초록이 안전 경로. 노란 점은 가로등</figcaption>
+              </figure>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <div class="mono card-no">No.04 · 2026.07 앱인토스 스토어 출시</div>
+                <h3 class="card-title">투자분석 데일리</h3>
+                <div class="mono card-stack">React Native (Granite) · 앱인토스</div>
+              </div>
+              <svg class="seal" viewBox="0 0 100 100" role="img" aria-label="상태: 출시"><circle cx="50" cy="50" r="46"/><circle cx="50" cy="50" r="38" class="inner"/><text x="50" y="50">출시</text></svg>
+            </div>
+            <div class="card-body">
+              <div>
+                <p class="card-desc">투자분석봇의 리포트를 토스 안에서 바로 보는 미니앱 「매일매일 경제」. 봇이 아침에 만든 데이터가 그대로 앱 피드로 이어집니다. 봇, 이메일, 앱으로 이어지는 하나의 파이프라인입니다.</p>
+                <ul class="mono facts">
+                  <li>봇 연동 피드</li>
+                  <li>테스트 91건</li>
+                  <li>버전 v1.4.2</li>
+                  <li>앱인토스 출시</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <div class="mono card-no">No.05 · 2026.08 앱인토스 스토어 출시</div>
+                <h3 class="card-title">전남광주 청년정책</h3>
+                <div class="mono card-stack">Google Apps Script · 온통청년 API · React Native (Granite)</div>
+              </div>
+              <svg class="seal" viewBox="0 0 100 100" role="img" aria-label="상태: 출시"><circle cx="50" cy="50" r="46"/><circle cx="50" cy="50" r="38" class="inner"/><text x="50" y="50">출시</text></svg>
+            </div>
+            <div class="card-body">
+              <div>
+                <p class="card-desc">전남광주 27개 시군구와 중앙부처의 청년정책을 마감이 가까운 순서로 모아 보여주는 토스 미니앱. 서버가 매일 아침 7시에 정책을 새로 모으고, 매주 월요일 마감이 다가온 정책을 알림으로 보냅니다.</p>
+                <ul class="mono facts">
+                  <li>27개 시군구 + 중앙부처</li>
+                  <li>매일 07:00 수집</li>
+                  <li>테스트 282건</li>
+                  <li>앱인토스 출시</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <div class="mono card-no">No.06 · 2026 ~ 계속</div>
+                <h3 class="card-title">만든 도구들</h3>
+                <div class="mono card-stack">Streamlit · Canva · 공공데이터</div>
+              </div>
+              <svg class="seal" viewBox="0 0 100 100" role="img" aria-label="상태: 기록"><circle cx="50" cy="50" r="46"/><circle cx="50" cy="50" r="38" class="inner"/><text x="50" y="50">기록</text></svg>
+            </div>
+            <div class="card-body">
+              <div>
+                <p class="card-desc">필요해서 만들고, 만들면 기록으로 남기는 작은 도구들. 각각은 작아도 전부 실제로 쓰기 위해 만들었습니다.</p>
+                <div class="rows">
+                  <div class="row"><strong>공모전 활동 트래커</strong><span>마감 D-day 카드 대시보드</span><em class="mono">v1 완성</em></div>
+                  <div class="row"><strong>주식 타이밍 분석기</strong><span>6개 지표 종합점수로 매수·매도 참고</span><em class="mono">사용 중</em></div>
+                  <div class="row"><strong>쑥이 주식 카드뉴스</strong><span>주식 초보용 하루 1개념 콘텐츠</span><em class="mono">EP.1 발행 후 중단</em></div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="loop" class="loop">
+      <p class="audit-note mono">2026-09-28 감사 기록: 다른 회사 시세로 잡힌 추천 종목을 찾아 추적에서 제외함</p>
+      <div class="wrap loop-grid">
+        <div>
+          <h2 class="section-title">검증 루프</h2>
+          <p class="loop-lead">감이 아니라 대장이 말하게 합니다. 만든 것은 반드시 계측하고, 최악의 결과는 복기해서 다음 지침으로 만듭니다.</p>
+          <p class="loop-text">투자분석봇의 복기 담당은 매주 최악의 포지션 3개를 진단해 다음 주 추천 프롬프트에 교훈을 주입합니다. 봇의 주간 성적은 단순 모멘텀 전략, 시장 지수와 나란히 적어서 봇이 쉬운 전략을 이기고 있는지부터 따집니다. 이 사이트의 모든 숫자도 같은 루프에서 나온 실측값입니다.</p>
+        </div>
+        <img class="loop-img" src="assets/loop-diagram.webp" alt="만든다, 계측한다, 복기한다 세 단계가 화살표로 이어진 순환 다이어그램" loading="lazy">
+      </div>
+    </section>
+
+    <section id="record" class="record">
+      <div class="wrap">
+        <p class="eyebrow">Record</p>
+        <h2 class="section-title">대장 밖의 기록</h2>
+        <div class="rows record-rows">
+          <div class="row">
+            <span class="mono record-date">2026.09</span>
+            <div>
+              <strong>2026 전남광주 청년 AI 솔버톤 장려상</strong>
+              <span>광주 시내버스 노선개편 영향 계산기. 팀 대표로 개편 전후 이동을 계산하는 웹을 만들었습니다. <a class="mono" href="https://gwangju-bus-reform-compare.pages.dev/" target="_blank" rel="noopener">열기 ↗</a></span>
+            </div>
+          </div>
+          <div class="row">
+            <span class="mono record-date">2026.09</span>
+            <div>
+              <strong>골든래빗 IT 수험서 베타리더 · 3권 감상평 수록</strong>
+              <span>AICE, 컴퓨터활용능력 1급 실기, 2급 필기. 첫 책 이후 두 권을 연달아 다시 맡았습니다.</span>
+            </div>
+          </div>
+          <div class="row">
+            <span class="mono record-date">2026.08</span>
+            <div>
+              <strong>에너지자원공학과 학생회장 · 상반기 정기감사 전 항목 S등급</strong>
+              <span>통장 거래 167건을 결산과 한 건씩 대조해, 제출 전에 오류를 전부 바로잡았습니다.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="timeline" class="timeline grid-soft">
+      <div class="wrap-narrow">
+        <p class="eyebrow center">Timeline</p>
+        <h2 class="section-title center">기록 연표</h2>
+        <ol class="timeline-list">
+          <li><span class="mono">2026.09</span><span>투자분석봇 주간 그림자 기준선 도입. 봇 성적을 모멘텀·지수 바구니와 비교</span></li>
+          <li><span class="mono">2026.09</span><span>청년 AI 솔버톤 본선 장려상. 광주 시내버스 노선개편 영향 계산기</span></li>
+          <li><span class="mono">2026.09</span><span>골든래빗 베타리딩 3권 전부 감상평 수록</span></li>
+          <li><span class="mono">2026.08</span><span>「전남광주 청년정책」 앱인토스 스토어 출시</span></li>
+          <li><span class="mono">2026.08</span><span>공무원 맛집 지도 7개 특별·광역시로 확장. 서울 23,511곳 추가</span></li>
+          <li><span class="mono">2026.08</span><span>학생회 상반기 정기감사 전 항목 S등급</span></li>
+          <li><span class="mono">2026.07</span><span>AI 일상안전지도 프로토타입 완성. 실데이터 1,424개 시설 결합</span></li>
+          <li><span class="mono">2026.07</span><span>투자분석봇 에이전트 팀 확장. 심사역, 복기 담당, 포트폴리오 매니저 채용</span></li>
+          <li><span class="mono">2026.07</span><span>투자분석 데일리 「매일매일 경제」, 앱인토스 스토어 출시</span></li>
+          <li><span class="mono">2026.06</span><span>공모전 활동 트래커 v1. AICE 수험서 베타리딩 완료</span></li>
+          <li><span class="mono">2026.05</span><span>투자분석봇 성과 추적 개시. 성과대장 첫 적립</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="contact" class="contact">
+      <div class="wrap-narrow center">
+        <h2 class="contact-title">기록은 계속됩니다</h2>
+        <p class="contact-lead">같이 만들고 싶은 것이 있거나, 대장의 어느 항목이 궁금하다면 언제든 연락 주세요.</p>
+        <a class="contact-mail" href="mailto:sjw53960211@gmail.com">메일 보내기 <span aria-hidden="true">→</span></a>
+        <p class="mono contact-sub"><a href="jaewon-lab-portfolio.pdf" download>PDF로 받기</a></p>
+        <svg class="contact-seal" width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="36" height="36" rx="7" fill="var(--seal)"/><text x="20" y="22" text-anchor="middle" dominant-baseline="central" font-size="20" font-weight="800" fill="var(--paper)" font-family="var(--font-body)">재</text></svg>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row mono">
+      <span>설재원 · 전남대학교 에너지자원공학과 · Gwangju, KR</span>
+      <span>jaewon-lab · operations ledger · 2026.09.29 갱신</span>
+    </div>
+  </footer>
+
+  <script src="assets/main.js" defer></script>
+</body>
+</html>
