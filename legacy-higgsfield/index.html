@@ -1,0 +1,411 @@
+<!DOCTYPE html><html lang="ko" style="color-scheme:light"><head><script>window.__hfAuthOrigin="https://auth.higgsfield.app";// Notifications only: browser permissions and iframe policies enforce access.
+(function () {
+  try {
+    if (window.__hfAccessPatched || window.parent === window) return;
+    window.__hfAccessPatched = true;
+    var viewerOrigin = null;
+    var pending = [];
+    var reported = {};
+    function flush() {
+      if (!viewerOrigin || !pending.length) return;
+      window.parent.postMessage({
+        source: "hf-app-permissions",
+        type: "permission-request",
+        capabilities: pending.slice()
+      }, viewerOrigin);
+      pending = [];
+    }
+    function report(capabilities) {
+      capabilities.forEach(function (capability) {
+        if (!reported[capability]) {
+          reported[capability] = true;
+          pending.push(capability);
+        }
+      });
+      flush();
+    }
+    window.addEventListener("message", function (event) {
+      if (event.source !== window.parent || !/^https?:\/\//.test(event.origin)) return;
+      if (!event.data || event.data.source !== "hf-app-permissions" || event.data.type !== "init") return;
+      viewerOrigin = event.origin;
+      try { flush(); } catch (error) { /* Delivery is best-effort. */ }
+    });
+    function wrap(owner, method, capabilities) {
+      // One unavailable or read-only API must not prevent other wrappers installing.
+      try {
+        if (!owner || typeof owner[method] !== "function") return;
+        var original = owner[method];
+        owner[method] = function () {
+          try {
+            report(typeof capabilities === "function" ? capabilities(arguments) : capabilities);
+          } catch (error) { /* Preserve native results even if reporting fails. */ }
+          return original.apply(this, arguments);
+        };
+      } catch (error) { /* Some browsers expose non-writable methods. */ }
+    }
+    function mediaCapabilities(args) {
+      var constraints = args[0];
+      var capabilities = [];
+      if (constraints && constraints.video) capabilities.push("camera");
+      if (constraints && constraints.audio) capabilities.push("microphone");
+      return capabilities;
+    }
+    wrap(navigator.mediaDevices, "getUserMedia", mediaCapabilities);
+    ["getUserMedia", "webkitGetUserMedia", "mozGetUserMedia"].forEach(function (method) {
+      wrap(navigator, method, mediaCapabilities);
+    });
+    wrap(navigator.mediaDevices, "getDisplayMedia", ["screen"]);
+    wrap(navigator.mediaDevices, "enumerateDevices", ["media-devices"]);
+    wrap(navigator.mediaDevices, "selectAudioOutput", ["speakers"]);
+    ["getCurrentPosition", "watchPosition"].forEach(function (method) {
+      wrap(navigator.geolocation, method, ["location"]);
+    });
+    ["read", "readText"].forEach(function (method) {
+      wrap(navigator.clipboard, method, ["clipboard-read"]);
+    });
+    ["write", "writeText"].forEach(function (method) {
+      wrap(navigator.clipboard, method, ["clipboard-write"]);
+    });
+    wrap(window.Notification, "requestPermission", ["notifications"]);
+    wrap(window.PushManager && window.PushManager.prototype, "subscribe", ["notifications"]);
+    wrap(navigator.bluetooth, "requestDevice", ["bluetooth"]);
+    wrap(navigator.usb, "requestDevice", ["usb"]);
+    wrap(navigator.serial, "requestPort", ["serial"]);
+    wrap(navigator.hid, "requestDevice", ["hid"]);
+    wrap(navigator, "requestMIDIAccess", ["midi"]);
+    ["showOpenFilePicker", "showSaveFilePicker", "showDirectoryPicker"].forEach(function (method) {
+      wrap(window, method, ["files"]);
+    });
+    wrap(window.FileSystemHandle && window.FileSystemHandle.prototype, "requestPermission", ["files"]);
+    wrap(window.Element && window.Element.prototype, "requestFullscreen", ["fullscreen"]);
+    wrap(window.Element && window.Element.prototype, "requestPointerLock", ["pointer-lock"]);
+    wrap(navigator.wakeLock, "request", ["wake-lock"]);
+    wrap(navigator.storage, "persist", ["persistent-storage"]);
+    wrap(navigator.xr, "requestSession", ["xr"]);
+    wrap(window.DeviceMotionEvent, "requestPermission", ["motion"]);
+    wrap(window.DeviceOrientationEvent, "requestPermission", ["motion"]);
+    wrap(window.Sensor && window.Sensor.prototype, "start", ["sensors"]);
+    wrap(window.Document && window.Document.prototype, "requestStorageAccess", ["storage-access"]);
+    wrap(window.Document && window.Document.prototype, "requestStorageAccessFor", ["storage-access"]);
+  } catch (error) {
+    // Instrumentation must not prevent the rest of the SDK loading.
+  }
+})();
+
+/**
+ * Approval client SDK — the browser half of the approval flow (paired with
+ * approve.html), injected into every app page. A real file, imported as text and
+ * bundled at deploy (see injected-sdk.ts + the router wrangler). Runs in the
+ * untrusted app page: plain ES5, idempotent (window.__hfPatched), fully
+ * try/catch-wrapped, installed inline+synchronous at <head> so it's present
+ * before any app code runs.
+ *
+ * There is exactly ONE approval trigger: window.hf.requestGeneration(model,
+ * params, opts). The app calls it on the user's Generate action; the modal is
+ * visible exactly while the returned promise is pending. Approve resolves the
+ * minted single-use intent id, which the app threads to its server function and
+ * the fnf SDK adapter sends as the submit body's confirmation_token; cancel
+ * rejects with a DOMException named AbortError (a user choice, not a failure).
+ * Enforcement is entirely server-side: the outbound spend gate 403s any
+ * POST /jobs/submit that doesn't carry a matching minted approval (see
+ * outbound-worker/src/spend-gate.ts), so an app that skips the call gets a
+ * self-describing failed submit, never a silent spend. This SDK never inspects
+ * request bodies and never opens a modal on its own.
+ */
+(function () {
+  try {
+    if (window.__hfPatched) return;
+    window.__hfPatched = true;
+    var of = window.fetch;
+    if (typeof of !== "function") return;
+    // Approval surface origin (auth.<zone>, serving the consent page at
+    // /approve). Preferred source: the origin the router stamps ahead of this
+    // script (injected-sdk.ts) — apps can be served on CUSTOM DOMAINS, where
+    // deriving from the page host would fabricate a non-existent
+    // auth.<customdomain>. Host derivation stays as the fallback for stale
+    // cached HTML that predates the stamp.
+    var APPROVE =
+      typeof window.__hfAuthOrigin === "string" && window.__hfAuthOrigin.indexOf("https://") === 0
+        ? window.__hfAuthOrigin
+        : "https://auth." + location.host.split(".").slice(1).join(".");
+    window.__hfFetches = window.__hfFetches || [];
+
+    // Single-flight: at most ONE approval modal at a time. A fast double-click (or
+    // an app firing two requests) would otherwise open a second scrim+iframe stacked
+    // on the first — so a second approve() while one is open returns the in-flight
+    // promise instead of opening another modal.
+    var openModal = null;
+
+    // The modal is a cross-origin iframe of auth.<zone>/approve: the app cannot
+    // read or script it, and WHO may frame the page is pinned server-side by its
+    // frame-ancestors. The page itself obtains the authoritative price from fnf
+    // before enabling Generate; app-supplied display prices are intentionally
+    // ignored. The app DOM can still restyle, shrink or overlay this iframe, and
+    // job binding does NOT cover that (a hidden but genuine click on the app's
+    // own job is still a click): the page defends itself — Generate arms only
+    // after a delay and only while the browser vouches that the card is visible
+    // and unoccluded (IntersectionObserver v2); otherwise the commit moves to a
+    // top-level popup the app cannot overlay. See approve-ui/src/redress.ts.
+    function approve(job) {
+      if (openModal) return openModal;
+      openModal = new Promise(function (resolve, reject) {
+        var grant = null;
+        var ready = false;
+        var done = false;
+        var openedAt = Date.now();
+
+        // Three parent layers so the iframe body can stay fully TRANSPARENT and
+        // still show no white edge:
+        //  - scrim: full-screen div carrying the blur (backdrop-filter samples the
+        //    real app behind it) + a dark tint.
+        //  - wrap: a rounded, overflow:hidden div that CLIPS the iframe. The iframe
+        //    overlaps the backdrop-filter scrim, so Chromium backs its layer
+        //    opaquely; the iframe's OWN border-radius doesn't reliably clip that
+        //    layer (leaving white corners), but a parent clip does. So the corners
+        //    outside the radius are clipped away → the blurred scrim shows through,
+        //    no white ring.
+        //  - frame: the iframe, fully transparent, filling wrap. Its page paints
+        //    only the card (edge-to-edge, no radius — wrap provides the rounding).
+        var scrim = document.createElement("div");
+        scrim.style.cssText =
+          "position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,0.28);" +
+          "-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)";
+        var wrap = document.createElement("div");
+        // opacity:0 until the page reports its height so the modal fades in at its
+        // final size (no empty-frame flash, no height re-center / layout shift).
+        // Round with clip-path (not just border-radius + overflow): clip-path is
+        // applied in the COMPOSITOR, so it clips the cross-origin iframe's own
+        // layer edge cleanly. border-radius/overflow only clip the shape and leave
+        // the iframe's opaque WHITE base fringing at the rounded corners (the white
+        // peek). background = card color as a second line of defense. Both the wrap
+        // and the iframe carry the clip; keep 24px in sync with the card radius.
+        wrap.style.cssText =
+          "position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);" +
+          "width:min(400px,calc(100vw - 32px));height:188px;border-radius:24px;overflow:hidden;" +
+          "-webkit-clip-path:inset(0 round 24px);clip-path:inset(0 round 24px);" +
+          "background:#23262a;opacity:0;transition:opacity 0.12s ease;z-index:2147483647";
+        var frame = document.createElement("iframe");
+        // referrerPolicy="origin": the page's frame-ancestors admits a registered
+        // CUSTOM DOMAIN only when this origin arrives as the Referer (approve.ts).
+        frame.referrerPolicy = "origin";
+        frame.src = APPROVE + "/approve";
+        frame.allowTransparency = "true";
+        frame.style.cssText =
+          "display:block;width:100%;height:100%;border:0;border-radius:24px;" +
+          "-webkit-clip-path:inset(0 round 24px);clip-path:inset(0 round 24px);background:#23262a";
+        wrap.appendChild(frame);
+        var revealTimer = null;
+
+        function cleanup() {
+          if (done) return;
+          done = true;
+          clearTimeout(revealTimer);
+          window.removeEventListener("message", onMessage);
+          document.removeEventListener("keydown", onKey, true);
+          wrap.remove();
+          scrim.remove();
+        }
+
+        function beacon(outcome) {
+          if (!grant) return;
+          try {
+            var payload = JSON.stringify({
+              grant: grant,
+              outcome: outcome,
+              ms_open: Date.now() - openedAt,
+            });
+            var url = APPROVE + "/approve/outcome";
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon(url, new Blob([payload], { type: "text/plain" }));
+            } else {
+              of(url, { method: "POST", body: payload, mode: "no-cors", keepalive: true }).catch(
+                function () {},
+              );
+            }
+          } catch (e) {}
+        }
+
+        // Dismiss = the same "denied" path as the modal's Cancel button, so the
+        // caller turns it into an AbortError (a cancel, not a failure).
+        function dismiss() {
+          if (done) return;
+          cleanup();
+          beacon("denied");
+          var error = new Error("hf: denied");
+          error.hfReason = "denied";
+          reject(error);
+        }
+
+        function onKey(event) {
+          if (event.key === "Escape" || event.keyCode === 27) dismiss();
+        }
+
+        function sendRequest() {
+          if (!ready || !grant || done) return;
+          frame.contentWindow.postMessage(
+            { source: "hf-approve", type: "request", grant: grant, job: job },
+            APPROVE,
+          );
+        }
+
+        function onMessage(event) {
+          if (event.origin !== APPROVE || event.source !== frame.contentWindow) return;
+          var data = event.data || {};
+          if (data.source !== "hf-approve") return;
+          // Size the clip wrapper to the page's reported card height, and reveal
+          // ONLY once sized — modal fades in at its final height (no shift/flash).
+          if (typeof data.h === "number" && data.h > 0) {
+            wrap.style.height = data.h + "px";
+            clearTimeout(revealTimer);
+            wrap.style.opacity = "1";
+          }
+          if (data.type === "ready") {
+            ready = true;
+            sendRequest();
+            return;
+          }
+          if (data.type === "pending") {
+            // The decision moved to a top-level consent window (the iframe
+            // relays its verdict and reports a closed popup as "denied"). Keep
+            // the iframe alive for it: tearing it down on the 120 s deadline
+            // orphans the popup — Cancel/Generate there could reach nobody.
+            clearTimeout(deadline);
+            deadline = setTimeout(onDeadline, 600000);
+            return;
+          }
+          if (data.type !== "result") return;
+          cleanup();
+          if (data.ok && typeof data.intentId === "string") {
+            resolve(data.intentId);
+            return;
+          }
+          beacon("denied");
+          var error = new Error("hf: " + (data.reason || "denied"));
+          error.hfReason = data.reason || "denied";
+          reject(error);
+        }
+
+        window.addEventListener("message", onMessage);
+        // Close on background (scrim) click and on Escape. The scrim sits behind
+        // the card (wrap), so a click on it is a click OUTSIDE the modal. Escape
+        // is captured on the parent; the page also handles Escape when focus is
+        // inside the iframe (see approve-ui).
+        scrim.addEventListener("click", dismiss);
+        document.addEventListener("keydown", onKey, true);
+        document.documentElement.appendChild(scrim);
+        document.documentElement.appendChild(wrap);
+        // Fallback: reveal at the default height if the page never reports its
+        // size, so the modal is never stuck hidden.
+        revealTimer = setTimeout(function () {
+          wrap.style.opacity = "1";
+        }, 500);
+
+        of("/__auth/approval-grant", { method: "POST" })
+          .then(function (r) {
+            return r
+              .json()
+              .catch(function () {
+                return {};
+              })
+              .then(function (b) {
+                return { s: r.status, b: b };
+              });
+          })
+          .then(function (x) {
+            if (!x.b || !x.b.grant) {
+              cleanup();
+              reject(
+                new Error(
+                  x.s === 401 ? "hf: not signed in" : "hf: approval unavailable (" + x.s + ")",
+                ),
+              );
+              return;
+            }
+            grant = x.b.grant;
+            sendRequest();
+          })
+          .catch(function (error) {
+            cleanup();
+            reject(error);
+          });
+
+        function onDeadline() {
+          if (done) return;
+          cleanup();
+          beacon("timeout");
+          reject(new Error("hf: approval timeout"));
+        }
+        var deadline = setTimeout(onDeadline, 120000);
+      });
+      // Release the single-flight lock once this approval settles, so the next
+      // genuine generation can open a fresh modal.
+      var release = function () {
+        openModal = null;
+      };
+      openModal.then(release, release);
+      return openModal;
+    }
+
+    // Observability-only fetch patch: request log for debugging (__hfFetches +
+    // console). No interception, no body inspection, no classification — the
+    // approval flow is driven solely by window.hf.requestGeneration.
+    window.fetch = function (input, init) {
+      try {
+        var url = typeof input === "string" ? input : (input && input.url) || String(input);
+        var method = (init && init.method) || (input && input.method) || "GET";
+        window.__hfFetches.push({ url: url, method: method, ts: Date.now() });
+        console.log("[hf-fetch]", method, url);
+      } catch (e) {}
+      return of.apply(this, arguments);
+    };
+
+    // Public SDK. The app contract (see the builder instructions and
+    // docs/generation-approval): call this on the Generate action with the SDK
+    // WIRE shape of the exact submission (wire.jobSetType + wire.params — the
+    // approval is bound server-side to the hash of {job_set_type, params} of the
+    // actual submit body), thread the resolved intent id to the server as the
+    // confirmation token, and render a cancel quietly. opts.credits is an
+    // optional display-only estimate shown in the modal. The id is a token:
+    // never logged here, and apps must not log it either.
+    window.hf = {
+      requestGeneration: function (model, params, opts) {
+        // Fail fast on a bad job identity, BEFORE any UI. The approve page
+        // (protocol.ts) silently ignores a request whose job_set_type isn't a
+        // non-empty string or whose params don't survive structured clone —
+        // which would leave the modal stuck on "Waiting for the app…" with no
+        // way to reply. A typed rejection shows the app its own bug instead.
+        if (typeof model !== "string" || !model) {
+          return Promise.reject(
+            new TypeError("hf: requestGeneration(model, params) — model must be a non-empty string"),
+          );
+        }
+        if (typeof structuredClone === "function") {
+          try {
+            structuredClone(params);
+          } catch (e) {
+            return Promise.reject(
+              new TypeError("hf: requestGeneration params must be structured-cloneable (plain JSON)"),
+            );
+          }
+        }
+        return approve({ job_set_type: model, params: params }).then(
+          function (id) {
+            console.log("[hf] approved");
+            return id;
+          },
+          // Cancel → AbortError, per the app contract ("render a quiet cancelled
+          // state"). Other failures (not signed in, unavailable, timeout) bubble
+          // as-is — those ARE failures.
+          function (e) {
+            if (e && e.hfReason === "denied") {
+              console.log("[hf] cancelled");
+              throw new DOMException("Generation cancelled", "AbortError");
+            }
+            throw e;
+          },
+        );
+      },
+    };
+  } catch (e) {}
+})();
+</script><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" as="image" href="/assets/hero-desk.webp"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&amp;family=IBM+Plex+Mono:wght@400;600&amp;display=swap" data-precedence="default"/><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" data-precedence="default"/><link rel="stylesheet" href="/assets/styles-F3VSvY-W.css" data-precedence="default"/><title>재원 랩 · 돌아가는 것들의 기록</title><meta name="description" content="시스템을 만들고 숫자로 검증하는 설재원의 운영 대장. 투자분석봇, AI 일상안전지도, 토스 미니앱까지 실측 지표로 기록합니다."/><meta name="author" content="설재원"/><meta name="theme-color" content="#f7f7f4"/><meta property="og:title" content="재원 랩 · 돌아가는 것들의 기록"/><meta property="og:description" content="시스템을 만들고 숫자로 검증하는 설재원의 운영 대장. 투자분석봇, AI 일상안전지도, 토스 미니앱까지 실측 지표로 기록합니다."/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:site" content="@Higgsfield"/><meta property="og:image" content="/assets/og.png"/><meta name="twitter:image" content="/assets/og.png"/><link rel="modulepreload" href="/assets/index-DC6L5Oij.js"/><link rel="modulepreload" href="/assets/index-DzbL_AJj.js"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="icon" href="/assets/favicon.svg"/><link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"/><link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"/><link rel="manifest" href="/site.webmanifest"/></head><body class="site-root"><!--$--><div class="site-root min-h-dvh"><header class="sticky top-0 z-50 border-b" style="background:color-mix(in srgb, var(--paper) 92%, transparent);border-color:var(--rule);backdrop-filter:blur(8px)"><nav class="mx-auto flex h-16 max-w-6xl items-center justify-between px-5"><a href="#top" class="flex items-center gap-3"><svg width="34" height="34" viewBox="0 0 40 40" role="img" aria-label="재원 랩 로고"><rect x="2" y="2" width="36" height="36" rx="6" fill="var(--seal)"></rect><text x="20" y="21" text-anchor="middle" dominant-baseline="central" fill="#f7f7f4" font-size="20" font-weight="800" font-family="var(--font-body)">재</text></svg><span class="text-lg font-bold tracking-tight">재원 랩</span></a><div class="font-mono-data hidden items-center gap-7 text-sm md:flex" style="color:var(--ink-soft)"><a href="#ledger" class="hover:text-[var(--seal)]">대장</a><a href="#loop" class="hover:text-[var(--seal)]">검증</a><a href="#timeline" class="hover:text-[var(--seal)]">연표</a><a href="#contact" class="hover:text-[var(--seal)]">연락</a></div></nav></header><section id="top" class="ledger-grid-soft relative overflow-hidden"><div class="mx-auto max-w-6xl px-5 pt-20 md:pt-28"><h1 class="text-5xl font-extrabold leading-none tracking-tighter md:text-8xl" style="color:var(--ink)"><span class="parallax-el block will-change-transform" style="transform:translateX(0px)"><span class="kinetic-char" style="animation-delay:0.05s">돌</span><span class="kinetic-char" style="animation-delay:0.085s">아</span><span class="kinetic-char" style="animation-delay:0.12000000000000001s">가</span><span class="kinetic-char" style="animation-delay:0.15500000000000003s">는</span><span class="kinetic-char" style="animation-delay:0.19s"> </span><span class="kinetic-char" style="animation-delay:0.22500000000000003s">것</span><span class="kinetic-char" style="animation-delay:0.26s">들</span><span class="kinetic-char" style="animation-delay:0.29500000000000004s">의</span></span><span class="parallax-el block will-change-transform" style="transform:translateX(0px)"><span class="kinetic-char" style="animation-delay:0.55s">기</span><span class="kinetic-char" style="animation-delay:0.5850000000000001s">록</span></span></h1><p class="mt-7 max-w-[34rem] text-base leading-relaxed md:text-lg" style="color:var(--ink-soft)">시스템을 만들고, 숫자로 검증합니다. 전남대학교 에너지자원공학과 설재원의 운영 대장입니다.</p><div class="mt-9 pb-14"><a href="#ledger" class="cta-stamp">대장 펼치기</a></div></div><div class="relative mx-auto max-w-6xl overflow-hidden px-5"><div class="parallax-el will-change-transform" style="transform:translateY(0px)"><img src="/assets/hero-desk.webp" alt="펼쳐진 종이 대장과 지표 모니터, 인주 도장이 놓인 새벽 책상" class="w-full border" style="border-color:var(--rule)" width="1032" height="312"/></div><p class="font-mono-data py-3 text-xs" style="color:var(--muted)">LEDGER OPEN. 매일 아침 8시, 첫 리포트가 도착하는 자리</p></div></section><section class="border-y" style="border-color:var(--rule);background:var(--surface)"><div class="mx-auto grid max-w-6xl grid-cols-2 py-10 md:grid-cols-4 md:py-14"><div class="" style="border-color:var(--seal)"><div class="flex flex-col items-center gap-2 px-6 py-4"><span class="font-mono-data text-5xl font-semibold md:text-7xl" style="color:var(--ink)">202</span><span class="text-sm" style="color:var(--muted)">회귀 테스트, 매 배포마다</span></div></div><div class="md:border-l-2" style="border-color:var(--seal)"><div class="flex flex-col items-center gap-2 px-6 py-4"><span class="font-mono-data text-5xl font-semibold md:text-7xl" style="color:var(--ink)">288</span><span class="text-sm" style="color:var(--muted)">추적한 투자 포지션</span></div></div><div class="md:border-l-2" style="border-color:var(--seal)"><div class="flex flex-col items-center gap-2 px-6 py-4"><span class="font-mono-data text-5xl font-semibold md:text-7xl" style="color:var(--ink)">7</span><span class="text-sm" style="color:var(--muted)">봇 안의 AI 역할</span></div></div><div class="md:border-l-2" style="border-color:var(--seal)"><div class="flex flex-col items-center gap-2 px-6 py-4"><span class="font-mono-data text-5xl font-semibold md:text-7xl" style="color:var(--ink)">1,424</span><span class="text-sm" style="color:var(--muted)">지도에 올린 안전시설</span></div></div></div></section><section id="ledger" class="ledger-grid-soft relative pb-24 pt-20"><div class="mx-auto max-w-6xl px-5"><p class="font-mono-data text-xs uppercase tracking-[0.25em]" style="color:var(--seal)">Ledger</p><h2 class="mt-3 text-3xl font-extrabold tracking-tight md:text-5xl">프로젝트 대장</h2><p class="mt-4 max-w-[36rem] leading-relaxed" style="color:var(--ink-soft)">한 장씩 넘기며 읽는 기록입니다. 모든 항목에는 상태 도장과 실측 지표가 찍혀 있습니다.</p></div><div class="mx-auto mt-12 max-w-6xl px-5"><article class="ledger-stack-card mb-8 overflow-hidden rounded-t-xl" style="top:88px;z-index:1"><div class="flex items-start justify-between gap-4 border-b px-6 pb-4 pt-6 md:px-10" style="border-color:var(--rule)"><div><div class="font-mono-data text-xs" style="color:var(--muted)">No.<!-- -->01<!-- --> · <!-- -->2026.05 ~ 운영 중</div><h3 class="mt-1 text-2xl font-extrabold tracking-tight md:text-4xl">투자분석봇</h3><div class="font-mono-data mt-2 text-xs md:text-sm" style="color:var(--ink-soft)">Google Apps Script · Gemini · Google Sheets</div></div><svg class="seal-round" width="92" height="92" viewBox="0 0 100 100" role="img" aria-label="상태: 가동중"><circle cx="50" cy="50" r="46" fill="none" stroke="var(--seal)" stroke-width="3.5"></circle><circle cx="50" cy="50" r="38" fill="none" stroke="var(--seal)" stroke-width="1.5"></circle><text x="50" y="50" text-anchor="middle" dominant-baseline="central" fill="var(--seal)" font-size="21" font-weight="800" font-family="var(--font-body)">가동중</text></svg></div><div class="grid gap-8 px-6 py-8 md:px-10 md:grid-cols-[1.1fr_0.9fr]"><div><p class="max-w-[38rem] leading-relaxed" style="color:var(--ink-soft)">매일 아침 8시, 글로벌 시장을 분석한 리포트를 만들어 구독자에게 보내는 봇. 리스크 심사역, 컴플라이언스, 복기 담당, 포트폴리오 매니저까지 7개 AI 역할이 서로의 판단을 검수하고, 성과대장이 그 판단들의 실제 성적을 검증합니다.</p><ul class="font-mono-data mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm"><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">AI 역할 7</span></li><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">회귀 테스트 202건</span></li><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">추적 포지션 288</span></li><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">백테스트 271포지션</span></li></ul></div><figure class="mx-auto w-full max-w-[300px]"><img src="/assets/plate-bot.webp" alt="투자분석봇이 실제 발송한 일간 리포트 이메일 화면" loading="lazy" class="w-full border" style="border-color:var(--rule);box-shadow:6px 6px 0 0 var(--paper-deep)"/><figcaption class="font-mono-data mt-2 text-xs" style="color:var(--muted)">실제 발송된 일간 리포트. 방어 모드 배너와 공포·탐욕 지수가 보인다</figcaption></figure></div></article><article class="ledger-stack-card mb-8 overflow-hidden rounded-t-xl" style="top:102px;z-index:2"><div class="flex items-start justify-between gap-4 border-b px-6 pb-4 pt-6 md:px-10" style="border-color:var(--rule)"><div><div class="font-mono-data text-xs" style="color:var(--muted)">No.<!-- -->02<!-- --> · <!-- -->2026.07 프로토타입 완성</div><h3 class="mt-1 text-2xl font-extrabold tracking-tight md:text-4xl">AI 일상안전지도</h3><div class="font-mono-data mt-2 text-xs md:text-sm" style="color:var(--ink-soft)">Python · OSM 보행 네트워크 · 공공데이터</div></div><svg class="seal-round" width="92" height="92" viewBox="0 0 100 100" role="img" aria-label="상태: 실증"><circle cx="50" cy="50" r="46" fill="none" stroke="var(--seal)" stroke-width="3.5"></circle><circle cx="50" cy="50" r="38" fill="none" stroke="var(--seal)" stroke-width="1.5"></circle><text x="50" y="50" text-anchor="middle" dominant-baseline="central" fill="var(--seal)" font-size="27" font-weight="800" font-family="var(--font-body)">실증</text></svg></div><div class="grid gap-8 px-6 py-8 md:px-10 md:grid-cols-[1.1fr_0.9fr]"><div><p class="max-w-[38rem] leading-relaxed" style="color:var(--ink-soft)">CCTV, 가로등, 비상벨, 치안시설 1,424개를 보행 네트워크에 결합해 최단 경로와 안전 경로를 비교하는 프로토타입. 광주 양림동 실측 기준, 야간에 2% 더 걸으면 경로의 안전 점수가 48% 올라갑니다.</p><ul class="font-mono-data mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm"><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">안전시설 1,424</span></li><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">도보 그래프 11,532엣지</span></li><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">야간 점수 +48%</span></li><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">추가 거리 +1.9%</span></li></ul></div><figure class="w-full"><img src="/assets/plate-safemap.webp" alt="야간 지도 위 최단 경로와 안전 경로 비교 화면" loading="lazy" class="w-full border" style="border-color:var(--rule);box-shadow:6px 6px 0 0 var(--paper-deep)"/><figcaption class="font-mono-data mt-2 text-xs" style="color:var(--muted)">회색이 최단 경로, 초록이 안전 경로. 노란 점은 가로등</figcaption></figure></div></article><article class="ledger-stack-card mb-8 overflow-hidden rounded-t-xl" style="top:116px;z-index:3"><div class="flex items-start justify-between gap-4 border-b px-6 pb-4 pt-6 md:px-10" style="border-color:var(--rule)"><div><div class="font-mono-data text-xs" style="color:var(--muted)">No.<!-- -->03<!-- --> · <!-- -->2026.07 앱인토스 스토어 출시</div><h3 class="mt-1 text-2xl font-extrabold tracking-tight md:text-4xl">투자분석 데일리</h3><div class="font-mono-data mt-2 text-xs md:text-sm" style="color:var(--ink-soft)">React Native (Granite) · 앱인토스</div></div><svg class="seal-round" width="92" height="92" viewBox="0 0 100 100" role="img" aria-label="상태: 출시"><circle cx="50" cy="50" r="46" fill="none" stroke="var(--seal)" stroke-width="3.5"></circle><circle cx="50" cy="50" r="38" fill="none" stroke="var(--seal)" stroke-width="1.5"></circle><text x="50" y="50" text-anchor="middle" dominant-baseline="central" fill="var(--seal)" font-size="27" font-weight="800" font-family="var(--font-body)">출시</text></svg></div><div class="grid gap-8 px-6 py-8 md:px-10 "><div><p class="max-w-[38rem] leading-relaxed" style="color:var(--ink-soft)">투자분석봇의 리포트를 토스 안에서 바로 보는 미니앱 「매일매일 경제」. 봇이 아침에 만든 데이터가 실시간으로 앱 피드에 연결됩니다. 스토어 출시로 봇, 이메일, 앱으로 이어지는 하나의 파이프라인이 완성됐습니다.</p><ul class="font-mono-data mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm"><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">봇 연동 실시간 피드</span></li><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">빌드 2.69MB</span></li><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">테스트 10건</span></li><li class="flex items-center gap-2"><span aria-hidden="true" style="color:var(--seal)">|</span><span style="color:var(--ink)">앱인토스 출시</span></li></ul></div></div></article><article class="ledger-stack-card mb-8 overflow-hidden rounded-t-xl" style="top:130px;z-index:4"><div class="flex items-start justify-between gap-4 border-b px-6 pb-4 pt-6 md:px-10" style="border-color:var(--rule)"><div><div class="font-mono-data text-xs" style="color:var(--muted)">No.<!-- -->04<!-- --> · <!-- -->2026 ~ 계속</div><h3 class="mt-1 text-2xl font-extrabold tracking-tight md:text-4xl">만든 도구들</h3><div class="font-mono-data mt-2 text-xs md:text-sm" style="color:var(--ink-soft)">Streamlit · Canva · 공공데이터</div></div><svg class="seal-round" width="92" height="92" viewBox="0 0 100 100" role="img" aria-label="상태: 기록"><circle cx="50" cy="50" r="46" fill="none" stroke="var(--seal)" stroke-width="3.5"></circle><circle cx="50" cy="50" r="38" fill="none" stroke="var(--seal)" stroke-width="1.5"></circle><text x="50" y="50" text-anchor="middle" dominant-baseline="central" fill="var(--seal)" font-size="27" font-weight="800" font-family="var(--font-body)">기록</text></svg></div><div class="grid gap-8 px-6 py-8 md:px-10 "><div><p class="max-w-[38rem] leading-relaxed" style="color:var(--ink-soft)">필요해서 만들고, 만들면 기록으로 남기는 작은 도구들. 각각은 작아도 전부 실제로 쓰기 위해 만들었습니다.</p><div class="mt-6 border-t" style="border-color:var(--rule)"><div class="grid grid-cols-1 gap-1 border-b py-3 md:grid-cols-[12rem_1fr_6rem] md:items-center md:gap-4" style="border-color:var(--rule)"><span class="font-bold">공모전 활동 트래커</span><span class="text-sm" style="color:var(--muted)">마감 D-day 카드 대시보드</span><span class="font-mono-data text-xs md:text-right" style="color:var(--seal)">v1 완성</span></div><div class="grid grid-cols-1 gap-1 border-b py-3 md:grid-cols-[12rem_1fr_6rem] md:items-center md:gap-4" style="border-color:var(--rule)"><span class="font-bold">주식 타이밍 분석기</span><span class="text-sm" style="color:var(--muted)">6개 지표 종합점수로 매수·매도 참고</span><span class="font-mono-data text-xs md:text-right" style="color:var(--seal)">사용 중</span></div><div class="grid grid-cols-1 gap-1 border-b py-3 md:grid-cols-[12rem_1fr_6rem] md:items-center md:gap-4" style="border-color:var(--rule)"><span class="font-bold">쑥이 주식 카드뉴스</span><span class="text-sm" style="color:var(--muted)">주식 초보용 하루 1개념 콘텐츠</span><span class="font-mono-data text-xs md:text-right" style="color:var(--seal)">EP.1 발행</span></div><div class="grid grid-cols-1 gap-1 border-b py-3 md:grid-cols-[12rem_1fr_6rem] md:items-center md:gap-4" style="border-color:var(--rule)"><span class="font-bold">공무원 맛집 지도</span><span class="text-sm" style="color:var(--muted)">업무추진비 데이터로 찾는 검증된 식당</span><span class="font-mono-data text-xs md:text-right" style="color:var(--seal)">제작 중</span></div></div></div></div></article></div></section><section id="loop" class="relative border-t py-20 md:py-28" style="border-color:var(--rule);background:var(--surface)"><div class="side-rail-note absolute left-3 top-24 hidden lg:block">2026-07-07 감사 기록: 성과대장 중복 적립 버그 발견, 757행을 237행으로 정리함</div><div class="mx-auto grid max-w-6xl items-center gap-12 px-5 md:grid-cols-[0.9fr_1.1fr] md:px-12"><div><h2 class="text-3xl font-extrabold tracking-tight md:text-5xl">검증 루프</h2><p class="mt-6 max-w-[30rem] leading-relaxed" style="color:var(--ink-soft)">감이 아니라 대장이 말하게 합니다. 만든 것은 반드시 계측하고, 최악의 결과는 복기해서 다음 지침으로 만듭니다.</p><p class="mt-4 max-w-[30rem] leading-relaxed" style="color:var(--ink-soft)">투자분석봇의 복기 담당은 매주 최악의 포지션 3개를 진단해 다음 주 추천 프롬프트에 교훈을 주입합니다. 이 사이트의 모든 숫자도 같은 루프에서 나온 실측값입니다.</p></div><img src="/assets/loop-diagram.webp" alt="만든다, 계측한다, 복기한다 세 단계가 화살표로 이어진 순환 다이어그램" loading="lazy" class="w-full max-w-[540px] justify-self-center md:justify-self-end"/></div></section><section id="timeline" class="ledger-grid-soft py-20 md:py-28"><div class="mx-auto max-w-4xl px-5 text-center"><p class="font-mono-data text-xs uppercase tracking-[0.25em]" style="color:var(--seal)">Timeline</p><h2 class="mt-3 text-3xl font-extrabold tracking-tight md:text-5xl">기록 연표</h2></div><div class="mx-auto mt-12 max-w-4xl px-5"><div class="timeline-row grid grid-cols-[6.5rem_1fr] items-baseline gap-4 py-5 md:grid-cols-[9rem_1fr]"><span class="font-mono-data flex items-center gap-3 text-sm font-semibold" style="color:var(--ink)"><span aria-hidden="true" class="inline-block h-2.5 w-2.5" style="background:var(--seal)"></span>2026.07</span><span class="leading-relaxed" style="color:var(--ink-soft)">AI 일상안전지도 프로토타입 완성. 실데이터 1,424개 시설 결합</span></div><div class="timeline-row grid grid-cols-[6.5rem_1fr] items-baseline gap-4 py-5 md:grid-cols-[9rem_1fr]"><span class="font-mono-data flex items-center gap-3 text-sm font-semibold" style="color:var(--ink)"><span aria-hidden="true" class="inline-block h-2.5 w-2.5" style="background:var(--seal)"></span>2026.07</span><span class="leading-relaxed" style="color:var(--ink-soft)">투자분석봇 에이전트 팀 확장. 심사역, 복기 담당, 포트폴리오 매니저 채용</span></div><div class="timeline-row grid grid-cols-[6.5rem_1fr] items-baseline gap-4 py-5 md:grid-cols-[9rem_1fr]"><span class="font-mono-data flex items-center gap-3 text-sm font-semibold" style="color:var(--ink)"><span aria-hidden="true" class="inline-block h-2.5 w-2.5" style="background:var(--seal)"></span>2026.07</span><span class="leading-relaxed" style="color:var(--ink-soft)">투자분석 데일리 「매일매일 경제」, 앱인토스 스토어 출시</span></div><div class="timeline-row grid grid-cols-[6.5rem_1fr] items-baseline gap-4 py-5 md:grid-cols-[9rem_1fr]"><span class="font-mono-data flex items-center gap-3 text-sm font-semibold" style="color:var(--ink)"><span aria-hidden="true" class="inline-block h-2.5 w-2.5" style="background:var(--seal)"></span>2026.06</span><span class="leading-relaxed" style="color:var(--ink-soft)">공모전 활동 트래커 v1. AICE 수험서 베타리딩 완료</span></div><div class="timeline-row grid grid-cols-[6.5rem_1fr] items-baseline gap-4 py-5 md:grid-cols-[9rem_1fr]"><span class="font-mono-data flex items-center gap-3 text-sm font-semibold" style="color:var(--ink)"><span aria-hidden="true" class="inline-block h-2.5 w-2.5" style="background:var(--seal)"></span>2026.05</span><span class="leading-relaxed" style="color:var(--ink-soft)">투자분석봇 성과 추적 개시. 성과대장 첫 적립</span></div></div></section><section id="contact" class="border-t py-24 text-center md:py-36" style="border-color:var(--rule);background:var(--surface)"><div class="mx-auto max-w-3xl px-5"><h2 class="text-4xl font-extrabold tracking-tight md:text-6xl">기록은 계속됩니다</h2><p class="mx-auto mt-6 max-w-[28rem] leading-relaxed" style="color:var(--ink-soft)">같이 만들고 싶은 것이 있거나, 대장의 어느 항목이 궁금하다면 언제든 연락 주세요.</p><div class="mt-10"><a href="mailto:sjw53960211@gmail.com" class="cta-underline text-2xl md:text-4xl">메일 보내기 <span aria-hidden="true">→</span></a></div><div class="mt-16 flex justify-center"><svg width="44" height="44" viewBox="0 0 40 40" role="img" aria-label="재원 랩 로고"><rect x="2" y="2" width="36" height="36" rx="6" fill="var(--seal)"></rect><text x="20" y="21" text-anchor="middle" dominant-baseline="central" fill="#f7f7f4" font-size="20" font-weight="800" font-family="var(--font-body)">재</text></svg></div></div></section><footer class="border-t py-8" style="border-color:var(--rule)"><div class="font-mono-data mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-5 text-xs md:flex-row" style="color:var(--muted)"><span>설재원 · 전남대학교 에너지자원공학과 · Gwangju, KR</span><span>jaewon-lab · operations ledger · 2026</span></div></footer></div><script>(function(a,f){let l;try{l=JSON.parse(sessionStorage.getItem(a)||"{}")}catch{return}const n=l?.[f||history.state?.__TSR_key];let c=!1;for(const t in n){const e=n[t],o=e?.scrollX,s=e?.scrollY;if(Number.isFinite(o)&&Number.isFinite(s)){if(t==="window")scrollTo(o,s),c=!0;else if(t)try{const r=document.querySelector(t);r&&(r.scrollLeft=o,r.scrollTop=s)}catch{}}}if(c)return;const i=location.hash.slice(1);if(i){const t=history.state?.__hashScrollIntoViewOptions??!0;if(t){const e=document.getElementById(i);e&&e.scrollIntoView(t)}return}scrollTo(0,0)})("tsr-scroll-restoration-v1_3");document.currentScript.remove()</script><!--/$--><script class="$tsr" id="$tsr-stream-barrier">(self.$R=self.$R||{})["tsr"]=[];self.$_TSR={h(){this.hydrated=!0,this.c()},e(){this.streamEnded=!0,this.c()},c(){this.hydrated&&this.streamEnded&&(delete self.$_TSR,delete self.$R.tsr)},p(e){this.initialized?e():this.buffer.push(e)},buffer:[]};$_TSR.router=($R=>$R[0]={manifest:$R[1]={routes:$R[2]={__root__:$R[3]={preloads:$R[4]=["/assets/index-DC6L5Oij.js"],scripts:$R[5]=[$R[6]={attrs:$R[7]={type:"module",async:!0,src:"/assets/index-DC6L5Oij.js"}}]},"/":$R[8]={preloads:$R[9]=["/assets/index-DzbL_AJj.js"]}}},matches:$R[10]=[$R[11]={i:"__root__ ",u:1790652998740,s:"success",ssr:!0},$R[12]={i:"  ",u:1790652998740,s:"success",ssr:!0}],lastMatchId:"  "})($R["tsr"]);$_TSR.e();document.currentScript.remove()</script><script type="module" async="" src="/assets/index-DC6L5Oij.js"></script><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&display=swap"><a href="https://higgsfield.ai/supercomputer/apps" target="_blank" rel="noopener noreferrer" id="hf-watermark" aria-label="Made in Higgsfield" style="position:fixed;bottom:12px;right:12px;z-index:2147483647;display:inline-flex;align-items:center;gap:6px;padding:4px 12px 4px 8px;border-radius:99px;background:#d1fe17;color:#1a1a1a;text-decoration:none;font:700 12px/20px 'Space Grotesk',system-ui,-apple-system,sans-serif;letter-spacing:0;text-transform:uppercase;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.25)"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M15.7624 9.87839L15.7504 9.74433C15.6374 8.45774 14.8222 6.03715 12.5612 6.03715C10.8834 6.03715 9.6159 7.73833 8.49733 9.23816C7.60477 10.4393 6.83142 11.4696 5.98048 11.4696C5.75431 11.4453 5.46281 11.3295 5.2844 11.0673C5.12373 10.8294 5.08211 10.5246 5.16535 10.1587C5.29617 9.57951 6.04597 9.04292 6.83722 8.4698C7.27148 8.16498 7.71785 7.8418 8.02726 7.53086C8.91982 6.6468 9.37199 6.00656 9.37199 4.9762C9.37199 3.94585 8.81868 3.43355 8.35457 3.21402C7.42636 2.77514 6.06388 3.0312 5.19519 3.79955C5.06437 3.92155 4.93338 4.03726 4.81432 4.14702C3.93967 4.94579 3.3507 5.4885 2 5.07373V6.74433C3.79093 7.55533 5.29634 6.00656 5.86756 5.29326C6.30779 4.82379 6.7719 4.54938 7.11712 4.54938H7.13503C7.28973 4.5555 7.42056 4.6165 7.5159 4.72626C7.67061 4.90926 7.73013 5.12267 7.70028 5.36038C7.63479 5.86044 7.12906 6.44562 6.20085 7.08586C5.11196 7.83586 3.29135 9.09186 3.14841 10.671C3.0413 11.8052 3.61252 12.9392 4.50509 13.3781C6.58752 14.3903 7.85499 12.6465 9.19955 10.8051C10.2289 9.38445 11.2047 8.03703 12.5614 8.03703C13.7811 8.03703 14.2333 9.07351 14.2333 9.72598V9.8541L14.1142 9.87839C11.1571 10.415 9.5446 13.2563 9.5446 14.5672C9.5446 15.8781 10.6275 17 11.9603 17C13.5193 17 15.447 15.6342 15.7564 11.793L15.7683 11.6528H17V9.87857H15.7624V9.87839ZM14.1499 11.8477C13.9119 14.1463 12.7635 15.2195 12.0674 15.2195C11.7521 15.2195 11.3118 14.9512 11.3118 14.4513C11.3118 13.8904 12.127 12.1892 13.9595 11.6832L14.1737 11.6283L14.1499 11.8479V11.8477Z" fill="currentColor"/></svg><span>Made in Higgsfield</span></a><script>(function(){try{if(window.self!==window.top){var w=document.getElementById("hf-watermark");if(w)w.remove()}}catch(e){}})()</script></body></html>
