@@ -129,6 +129,10 @@ ul, ol { padding: 0; list-style: none; }
 .plate img { width: 100%; border: 1px solid var(--rule); box-shadow: 6px 6px 0 0 var(--paper-deep); }
 .plate figcaption { margin-top: .5rem; font-size: .75rem; color: var(--muted); }
 .narrow-plate .plate { width: 100%; max-width: 300px; margin: 0 auto; }
+.phones-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+.phones-row a { display: block; }
+.phones img { border-radius: 8px; box-shadow: 3px 3px 0 0 var(--paper-deep); }
+.phones a:hover img { border-color: var(--seal); }
 
 .rows { margin-top: 1.5rem; }
 .row { display: grid; grid-template-columns: 13rem 1fr auto; gap: 1rem; align-items: baseline; padding: .8rem 0; border-top: 1px solid var(--rule); }
