@@ -26,6 +26,18 @@
 
 4. 커밋하고 push 한다.
 
+## 인장(로고)
+
+「설재 / 원❄」 네 칸 인장. 글자는 Black Han Sans(SIL OFL 1.1) 윤곽선을 경로로 바꾼 것이라
+폰트 없이도 똑같이 보인다. 고칠 때는 스크립트를 고치고 다시 뽑는다.
+
+```sh
+curl -sfL -o BlackHanSans.ttf https://github.com/google/fonts/raw/main/ofl/blackhansans/BlackHanSans-Regular.ttf
+python tools/make_seal.py BlackHanSans.ttf      # assets/seal.svg, seal-stamp.svg
+cp assets/seal.svg assets/favicon.svg
+python tools/render_assets.py                    # 아이콘 PNG 5개 + og.png (tools/og.html)
+```
+
 ## 원본
 
 처음 사이트는 Higgsfield 웹사이트 빌더로 만들어 https://jaewon-lab.higgsfield.app 에 올렸다.

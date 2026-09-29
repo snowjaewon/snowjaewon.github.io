@@ -180,7 +180,7 @@ ul, ol { padding: 0; list-style: none; }
 .contact-sub { margin-top: 1.25rem; font-size: .8rem; }
 .contact-sub a { color: var(--muted); border-bottom: 1px solid var(--rule); }
 .contact-sub a:hover { color: var(--seal); }
-.contact-seal { margin: 3rem auto 0; }
+.contact-seal { display: block; margin: 3rem auto 0; transform: rotate(-5deg); }
 
 .site-footer { border-top: 1px solid var(--rule); background: var(--paper); padding: 2.5rem 0 3rem; }
 .footer-row { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; font-size: .75rem; color: var(--muted); }
@@ -221,7 +221,8 @@ ul, ol { padding: 0; list-style: none; }
 @media print {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-size: 9.5pt; line-height: 1.5; background: #fff; }
-  .site-header, .cta-stamp, .hero-figure, .audit-note, .contact-seal, .contact-sub, .loop-img { display: none !important; }
+  .site-header, .cta-stamp, .hero-figure, .audit-note, .contact-sub, .loop-img { display: none !important; }
+  .contact-seal { width: 17mm; height: 17mm; margin-top: 4mm; }
   .grid-soft { background-image: none; }
   .hero { background: #fff; }
   .hero-copy { padding: 0 0 6mm; }
